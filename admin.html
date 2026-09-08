@@ -1,1 +1,91 @@
-<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>KATENAILS Admin</title><style>body{font:16px Arial;background:#f7faef;padding:20px}.row{background:white;padding:15px;margin:10px 0;border-radius:15px}button,input{padding:10px;margin:4px}</style><h1>KATENAILS — записи</h1><input id="key" type="password" placeholder="Ключ"><button onclick="load()">Войти</button><div id="list"></div><script>async function load(){let r=await fetch("/api/bookings",{headers:{"x-admin-key":key.value}}),a=await r.json();list.innerHTML=r.ok?a.map(x=>`<div class=row><b>${x.date} ${x.time}</b> — ${x.service}<br>${x.name} · ${x.phone}<br>${x.comment||""}<br>${x.status}<br><button onclick="act(${x.id},'confirmed')">Подтвердить</button><button onclick="act(${x.id},'cancelled')">Отменить</button></div>`).join(""):a.error}async function act(id,status){await fetch("/api/bookings/"+id,{method:"PATCH",headers:{"Content-Type":"application/json","x-admin-key":key.value},body:JSON.stringify({status})});load()}</script>
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>KATENAILS Admin</title>
+<style>
+body{font:16px Arial;background:#f7faef;padding:20px}
+.row{background:white;padding:15px;margin:10px 0;border-radius:15px}
+button,input{padding:10px;margin:4px}
+#error{color:#b00020;margin:15px 0}
+</style>
+</head>
+<body>
+
+<h1>KATENAILS — записи</h1>
+
+<input id="key" type="password" placeholder="Ключ">
+<button onclick="loadBookings()">Войти</button>
+
+<div id="error"></div>
+<div id="list"></div>
+
+<script>
+async function loadBookings(){
+  const error=document.getElementById("error");
+  const list=document.getElementById("list");
+  const key=document.getElementById("key").value;
+
+  error.textContent="Загрузка...";
+  list.innerHTML="";
+
+  try{
+    const r=await fetch("/api/bookings",{
+      headers:{"x-admin-key":key}
+    });
+
+    const text=await r.text();
+    let data;
+
+    try{
+      data=JSON.parse(text);
+    }catch{
+      throw new Error("Сервер вернул не JSON: "+text);
+    }
+
+    if(!r.ok){
+      throw new Error(data.error||"Ошибка "+r.status);
+    }
+
+    error.textContent="";
+
+    if(!data.length){
+      list.innerHTML="<h3>Записей пока нет</h3>";
+      return;
+    }
+
+    list.innerHTML=data.map(x=>`
+      <div class="row">
+        <b>${x.date} ${x.time}</b> — ${x.service}<br>
+        ${x.name} · ${x.phone}<br>
+        ${x.comment||""}<br>
+        Статус: <b>${x.status}</b><br>
+        <button onclick="act(${x.id},'confirmed')">Подтвердить</button>
+        <button onclick="act(${x.id},'cancelled')">Отменить</button>
+      </div>
+    `).join("");
+
+  }catch(e){
+    error.textContent="Ошибка: "+e.message;
+  }
+}
+
+async function act(id,status){
+  const key=document.getElementById("key").value;
+
+  await fetch("/api/bookings/"+id,{
+    method:"PATCH",
+    headers:{
+      "Content-Type":"application/json",
+      "x-admin-key":key
+    },
+    body:JSON.stringify({status})
+  });
+
+  loadBookings();
+}
+</script>
+
+</body>
+</html>
