@@ -1,0 +1,1 @@
+self.addEventListener("push",e=>{const d=e.data?e.data.json():{title:"KATENAILS",body:"Изменение записи"};e.waitUntil(self.registration.showNotification(d.title,{body:d.body,icon:"/icon.svg"}))});
