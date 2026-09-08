@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express=require("express"),Database=require("better-sqlite3"),nodemailer=require("nodemailer"),webpush=require("web-push"),path=require("path");
 const app=express(),db=new Database("katenails.db");
-app.use(express.json());app.use(express.static(".");
+app.use(express.json());app.use(express.static("."));
 db.exec(`CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY AUTOINCREMENT,service TEXT,name TEXT,phone TEXT,date TEXT,time TEXT,comment TEXT,status TEXT DEFAULT 'pending',subscription TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE UNIQUE INDEX IF NOT EXISTS slot ON bookings(service,date,time) WHERE status!='cancelled'`);
 const slots=["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00"];
