@@ -1,20 +1,26 @@
 <!doctype html>
-<html lang="ru">
+<html lang="uk">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>KATENAILS Admin</title>
+<title>KATENAILS — Адмін</title>
 
 <style>
 body{
-  font:16px Arial;
+  font-family:Arial,sans-serif;
   background:#f7faef;
   padding:20px;
   margin:0;
+  color:#222;
 }
 
-h1{
-  margin-top:0;
+h1,h2{margin-top:0}
+
+.card,.row{
+  background:white;
+  padding:16px;
+  margin:15px 0;
+  border-radius:16px;
 }
 
 input,select,textarea,button{
@@ -33,18 +39,8 @@ button{
   border:0;
 }
 
-.card{
-  background:white;
-  padding:16px;
-  margin:15px 0;
-  border-radius:16px;
-}
-
-.row{
-  background:white;
-  padding:15px;
-  margin:10px 0;
-  border-radius:15px;
+.danger{
+  background:#ffd5d5;
 }
 
 .actions{
@@ -56,283 +52,598 @@ button{
   flex:1;
 }
 
-#message{
-  margin:15px 0;
+.status{
+  margin-top:8px;
   font-weight:bold;
+}
+
+#message{
+  font-weight:bold;
+  margin:15px 0;
 }
 </style>
 </head>
 
 <body>
 
-<h1>KATENAILS — записи</h1>
+<h1>KATENAILS — Адмін-панель</h1>
 
-<div class="card">
-  <input id="key" type="password" placeholder="Ключ администратора">
-  <button onclick="login()">Войти</button>
+<div class="card" id="loginBox">
+  <input id="key" type="password" placeholder="Ключ адміністратора">
+  <button onclick="login()">Увійти</button>
 </div>
 
 <div id="message"></div>
 
 <div id="admin" style="display:none">
 
-  <div class="card">
-    <h2>➕ Добавить запись вручную</h2>
+<!-- ДОДАТИ ЗАПИС -->
 
-    <select id="manualService">
-      <option>Маникюр</option>
-      <option>Стрижки</option>
-    </select>
+<div class="card">
+<h2>➕ Додати запис вручну</h2>
 
-    <input id="manualDate" type="date">
+<select id="manualService">
+<option>Манікюр</option>
+<option>Стрижки</option>
+</select>
 
-    <select id="manualTime">
-      <option value="">Выберите время</option>
-    </select>
+<input id="manualDate" type="date">
 
-    <input id="manualName" placeholder="Имя клиента">
+<select id="manualTime">
+<option value="">Оберіть час</option>
+</select>
 
-    <input id="manualPhone" placeholder="Телефон" type="tel">
+<input id="manualName" placeholder="Ім'я клієнта">
 
-    <input id="manualInstagram" placeholder="@username">
+<input id="manualPhone" placeholder="Телефон" type="tel">
 
-    <textarea id="manualComment" placeholder="Комментарий"></textarea>
+<input id="manualInstagram" placeholder="Instagram, наприклад @username">
 
-    <button onclick="addBooking()">Добавить запись</button>
-  </div>
+<textarea id="manualComment" placeholder="Коментар"></textarea>
 
-  <h2>📋 Все записи</h2>
+<button onclick="addBooking()">Додати запис</button>
+</div>
 
-  <div id="list"></div>
+
+<!-- ЗАКРИТИ ДЕНЬ -->
+
+<div class="card">
+<h2>🚫 Закрити день</h2>
+
+<input id="closedDayDate" type="date">
+
+<button onclick="closeDay()">Закрити цей день</button>
+
+<div id="closedDays"></div>
+</div>
+
+
+<!-- ЗАКРИТИ ЧАС -->
+
+<div class="card">
+<h2>🕐 Закрити окремий час</h2>
+
+<input id="closedSlotDate" type="date">
+
+<select id="closedSlotTime"></select>
+
+<button onclick="closeSlot()">Закрити цей час</button>
+
+<div id="closedSlots"></div>
+</div>
+
+
+<!-- ЗАПИСИ -->
+
+<h2>📋 Записи</h2>
+
+<div id="list"></div>
 
 </div>
 
+
 <script>
 
-let adminKey = "";
+let adminKey="";
 
-const slots = [
-  "09:00","10:00","11:00","12:00",
-  "13:00","14:00","15:00","16:00",
-  "17:00","18:00","19:00"
+const slots=[
+"09:00","10:00","11:00","12:00",
+"13:00","14:00","15:00","16:00",
+"17:00"
 ];
 
-async function login(){
+const $=id=>document.getElementById(id);
 
-  adminKey = document.getElementById("key").value;
+
+/* ЗАПАМ'ЯТАТИ АДМІНА */
+
+const savedKey=localStorage.getItem("katenails_admin_key");
+
+if(savedKey){
+  adminKey=savedKey;
+  login(true);
+}
+
+
+/* ВХІД */
+
+async function login(auto=false){
+
+  if(!auto){
+    adminKey=$("key").value.trim();
+  }
 
   if(!adminKey){
-    message("Введите ключ");
+    message("Введіть ключ адміністратора");
     return;
   }
 
-  await loadBookings();
+  const r=await fetch("/api/bookings",{
+    headers:{
+      "x-admin-key":adminKey
+    }
+  });
+
+  const data=await r.json();
+
+  if(!r.ok){
+    if(auto){
+      localStorage.removeItem("katenails_admin_key");
+      adminKey="";
+      return;
+    }
+
+    message(data.error||"Помилка входу");
+    return;
+  }
+
+  localStorage.setItem(
+    "katenails_admin_key",
+    adminKey
+  );
+
+  $("loginBox").style.display="none";
+  $("admin").style.display="block";
+
+  message("");
+
+  await loadAll();
 }
+
+
+/* ВСІ ДАНІ */
+
+async function loadAll(){
+
+  await loadBookings();
+  await loadClosedDays();
+  await loadClosedSlots();
+  await updateManualTimes();
+
+}
+
+
+/* ЗАПИСИ */
 
 async function loadBookings(){
 
-  try{
-
-    const r = await fetch("/api/bookings",{
-      headers:{
-        "x-admin-key":adminKey
-      }
-    });
-
-    const data = await r.json();
-
-    if(!r.ok){
-      message(data.error || "Ошибка входа");
-      return;
+  const r=await fetch("/api/bookings",{
+    headers:{
+      "x-admin-key":adminKey
     }
+  });
 
-    document.getElementById("admin").style.display="block";
-    document.getElementById("message").textContent="";
+  const data=await r.json();
 
-    const list=document.getElementById("list");
+  if(!r.ok){
+    message(data.error||"Помилка");
+    return;
+  }
 
-    if(!data.length){
-      list.innerHTML="<p>Записей пока нет.</p>";
-      return;
-    }
+  if(!data.length){
+    $("list").innerHTML="<p>Записів поки немає.</p>";
+    return;
+  }
 
-    list.innerHTML=data.map(x=>`
+  $("list").innerHTML=data.map(x=>`
 
-      <div class="row">
+    <div class="row">
 
-        <b>${x.date} ${x.time}</b><br>
-        Услуга: ${escapeHtml(x.service)}<br>
-        Клиент: ${escapeHtml(x.name)}<br>
-        Телефон: ${escapeHtml(x.phone)}<br>
-        Instagram: ${escapeHtml(x.instagram || "—")}<br>
-        Комментарий: ${escapeHtml(x.comment || "—")}<br>
-        Статус: <b>${statusText(x.status)}</b>
+      <b>${x.date} ${x.time}</b><br>
 
-        ${
-          x.status === "pending"
-          ? `
-            <div class="actions">
-              <button onclick="changeStatus(${x.id},'confirmed')">
-                ✅ Подтвердить
-              </button>
+      Послуга: ${esc(x.service)}<br>
+      Клієнт: ${esc(x.name)}<br>
+      Телефон: ${esc(x.phone)}<br>
+      Instagram: ${esc(x.instagram||"—")}<br>
+      Коментар: ${esc(x.comment||"—")}
 
-              <button onclick="changeStatus(${x.id},'cancelled')">
-                ❌ Отменить
-              </button>
-            </div>
-          `
-          : ""
-        }
-
+      <div class="status">
+        ${statusText(x.status)}
       </div>
 
-    `).join("");
+      ${
+        x.status==="pending"
+        ? `
+        <div class="actions">
 
-    await updateManualTimes();
+          <button onclick="changeStatus(${x.id},'confirmed')">
+            ✅ Підтвердити
+          </button>
 
-  }catch(e){
+          <button class="danger"
+            onclick="changeStatus(${x.id},'cancelled')">
+            ❌ Скасувати
+          </button>
 
-    message("Ошибка соединения с сервером");
+        </div>
+        `
+        :""
+      }
 
-  }
+    </div>
+
+  `).join("");
+
 }
+
+
+/* ПІДТВЕРДИТИ / СКАСУВАТИ */
 
 async function changeStatus(id,status){
 
-  try{
-
-    const r=await fetch("/api/bookings/"+id,{
+  const r=await fetch(
+    "/api/bookings/"+id,
+    {
       method:"PATCH",
       headers:{
         "Content-Type":"application/json",
         "x-admin-key":adminKey
       },
       body:JSON.stringify({status})
-    });
-
-    const data=await r.json();
-
-    if(!r.ok){
-      message(data.error || "Не удалось изменить статус");
-      return;
     }
+  );
 
-    await loadBookings();
+  const data=await r.json();
 
-  }catch(e){
-
-    message("Ошибка соединения");
-
-  }
-}
-
-async function addBooking(){
-
-  const service=document.getElementById("manualService").value;
-  const date=document.getElementById("manualDate").value;
-  const time=document.getElementById("manualTime").value;
-  const name=document.getElementById("manualName").value.trim();
-  const phone=document.getElementById("manualPhone").value.trim();
-  const instagram=document.getElementById("manualInstagram").value.trim();
-  const comment=document.getElementById("manualComment").value.trim();
-
-  if(!date || !time || !name || !phone || !instagram){
-    message("Заполните дату, время, имя, телефон и Instagram");
+  if(!r.ok){
+    message(data.error||"Не вдалося змінити статус");
     return;
   }
 
-  try{
+  await loadBookings();
 
-    const r=await fetch("/api/admin/bookings",{
+}
+
+
+/* РУЧНИЙ ЗАПИС */
+
+async function addBooking(){
+
+  const body={
+    service:$("manualService").value,
+    date:$("manualDate").value,
+    time:$("manualTime").value,
+    name:$("manualName").value.trim(),
+    phone:$("manualPhone").value.trim(),
+    instagram:$("manualInstagram").value.trim(),
+    comment:$("manualComment").value.trim()
+  };
+
+  if(
+    !body.date||
+    !body.time||
+    !body.name||
+    !body.phone||
+    !body.instagram
+  ){
+
+    message(
+      "Заповніть дату, час, ім'я, телефон та Instagram"
+    );
+
+    return;
+  }
+
+  const r=await fetch(
+    "/api/admin/bookings",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-key":adminKey
+      },
+      body:JSON.stringify(body)
+    }
+  );
+
+  const data=await r.json();
+
+  if(!r.ok){
+    message(data.error||"Не вдалося додати запис");
+    return;
+  }
+
+  message("Запис успішно додано ✅");
+
+  $("manualName").value="";
+  $("manualPhone").value="";
+  $("manualInstagram").value="";
+  $("manualComment").value="";
+
+  await loadAll();
+
+}
+
+
+/* ВІЛЬНИЙ ЧАС ДЛЯ РУЧНОГО ЗАПИСУ */
+
+async function updateManualTimes(){
+
+  const date=$("manualDate").value;
+  const service=$("manualService").value;
+
+  if(!date)return;
+
+  const r=await fetch(
+    `/api/availability?service=${encodeURIComponent(service)}&date=${date}`
+  );
+
+  const data=await r.json();
+
+  $("manualTime").innerHTML=
+    '<option value="">Оберіть час</option>';
+
+  data.slots
+    .filter(x=>x.available)
+    .forEach(x=>{
+
+      const o=document.createElement("option");
+
+      o.value=x.time;
+      o.textContent=x.time;
+
+      $("manualTime").appendChild(o);
+
+    });
+
+}
+
+
+/* ЗАКРИТИ ДЕНЬ */
+
+async function closeDay(){
+
+  const date=$("closedDayDate").value;
+
+  if(!date){
+    message("Оберіть дату");
+    return;
+  }
+
+  const r=await fetch(
+    "/api/admin/closed-days",
+    {
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-key":adminKey
+      },
+      body:JSON.stringify({date})
+    }
+  );
+
+  const data=await r.json();
+
+  if(!r.ok){
+    message(data.error||"Помилка");
+    return;
+  }
+
+  message("День закрито 🚫");
+
+  await loadAll();
+
+}
+
+
+/* СПИСОК ЗАКРИТИХ ДНІВ */
+
+async function loadClosedDays(){
+
+  const r=await fetch(
+    "/api/admin/closed-days",
+    {
+      headers:{
+        "x-admin-key":adminKey
+      }
+    }
+  );
+
+  const data=await r.json();
+
+  $("closedDays").innerHTML=data.length
+    ? data.map(x=>`
+      <div class="row">
+        ${x.date}
+        <button class="danger"
+          onclick="openDay('${x.date}')">
+          Відкрити день
+        </button>
+      </div>
+    `).join("")
+    : "<p>Закритих днів немає.</p>";
+
+}
+
+
+/* ВІДКРИТИ ДЕНЬ */
+
+async function openDay(date){
+
+  await fetch(
+    "/api/admin/closed-days/"+date,
+    {
+      method:"DELETE",
+      headers:{
+        "x-admin-key":adminKey
+      }
+    }
+  );
+
+  await loadAll();
+
+}
+
+
+/* ЗАКРИТИ ЧАС */
+
+async function closeSlot(){
+
+  const date=$("closedSlotDate").value;
+  const time=$("closedSlotTime").value;
+
+  if(!date||!time){
+    message("Оберіть дату та час");
+    return;
+  }
+
+  const r=await fetch(
+    "/api/admin/closed-slots",
+    {
       method:"POST",
       headers:{
         "Content-Type":"application/json",
         "x-admin-key":adminKey
       },
       body:JSON.stringify({
-        service,
         date,
-        time,
-        name,
-        phone,
-        instagram,
-        comment
+        time
       })
-    });
-
-    const data=await r.json();
-
-    if(!r.ok){
-      message(data.error || "Не удалось добавить запись");
-      return;
     }
+  );
 
-    message("Запись добавлена ✅");
+  const data=await r.json();
 
-    document.getElementById("manualName").value="";
-    document.getElementById("manualPhone").value="";
-    document.getElementById("manualInstagram").value="";
-    document.getElementById("manualComment").value="";
-
-    await loadBookings();
-
-  }catch(e){
-
-    message("Ошибка соединения");
-
+  if(!r.ok){
+    message(data.error||"Помилка");
+    return;
   }
+
+  message("Час закрито 🕐");
+
+  await loadAll();
+
 }
 
-async function updateManualTimes(){
 
-  const date=document.getElementById("manualDate").value;
-  const service=document.getElementById("manualService").value;
-  const select=document.getElementById("manualTime");
+/* СПИСОК ЗАКРИТИХ ГОДИН */
 
-  if(!date) return;
+async function loadClosedSlots(){
 
-  try{
+  const r=await fetch(
+    "/api/admin/closed-slots",
+    {
+      headers:{
+        "x-admin-key":adminKey
+      }
+    }
+  );
 
-    const r=await fetch(
-      `/api/availability?service=${encodeURIComponent(service)}&date=${date}`
-    );
+  const data=await r.json();
 
-    const data=await r.json();
+  $("closedSlots").innerHTML=data.length
+    ? data.map(x=>`
+      <div class="row">
+        ${x.date} — ${x.time}
 
-    select.innerHTML='<option value="">Выберите время</option>';
+        <button class="danger"
+          onclick="openSlot('${x.date}','${x.time}')">
+          Відкрити час
+        </button>
 
-    data.slots
-      .filter(x=>x.available)
-      .forEach(x=>{
-        const option=document.createElement("option");
-        option.value=x.time;
-        option.textContent=x.time;
-        select.appendChild(option);
-      });
+      </div>
+    `).join("")
+    : "<p>Закритих годин немає.</p>";
 
-  }catch(e){
-
-    select.innerHTML='<option value="">Ошибка загрузки</option>';
-
-  }
 }
+
+
+/* ВІДКРИТИ ЧАС */
+
+async function openSlot(date,time){
+
+  await fetch(
+    `/api/admin/closed-slots/${date}/${encodeURIComponent(time)}`,
+    {
+      method:"DELETE",
+      headers:{
+        "x-admin-key":adminKey
+      }
+    }
+  );
+
+  await loadAll();
+
+}
+
+
+/* СПИСОК ЧАСУ */
+
+$("closedSlotTime").innerHTML=
+  '<option value="">Оберіть час</option>'+
+  slots.map(x=>`
+    <option value="${x}">${x}</option>
+  `).join("");
+
+
+/* ДАТИ */
+
+const today=
+  new Date().toISOString().slice(0,10);
+
+$("manualDate").value=today;
+$("closedDayDate").value=today;
+$("closedSlotDate").value=today;
+
+
+/* ПОДІЇ */
+
+$("manualDate").onchange=
+  updateManualTimes;
+
+$("manualService").onchange=
+  updateManualTimes;
+
+
+/* СТАТУС */
 
 function statusText(status){
 
-  if(status==="pending") return "⏳ Ожидает подтверждения";
-  if(status==="confirmed") return "✅ Подтверждена";
-  if(status==="cancelled") return "❌ Отменена";
+  if(status==="pending")
+    return "⏳ Очікує підтвердження";
+
+  if(status==="confirmed")
+    return "✅ Підтверджено";
+
+  if(status==="cancelled")
+    return "❌ Скасовано";
 
   return status;
 }
 
+
+/* ПОВІДОМЛЕННЯ */
+
 function message(text){
 
-  document.getElementById("message").textContent=text;
+  $("message").textContent=text;
 
 }
 
-function escapeHtml(value){
+
+/* БЕЗПЕЧНИЙ ТЕКСТ */
+
+function esc(value){
 
   return String(value)
     .replaceAll("&","&amp;")
@@ -342,15 +653,6 @@ function escapeHtml(value){
     .replaceAll("'","&#039;");
 
 }
-
-document.getElementById("manualDate").value =
-  new Date().toISOString().slice(0,10);
-
-document.getElementById("manualDate").onchange =
-  updateManualTimes;
-
-document.getElementById("manualService").onchange =
-  updateManualTimes;
 
 </script>
 
