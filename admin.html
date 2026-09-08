@@ -4,87 +4,354 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>KATENAILS Admin</title>
+
 <style>
-body{font:16px Arial;background:#f7faef;padding:20px}
-.row{background:white;padding:15px;margin:10px 0;border-radius:15px}
-button,input{padding:10px;margin:4px}
-#error{color:#b00020;margin:15px 0}
+body{
+  font:16px Arial;
+  background:#f7faef;
+  padding:20px;
+  margin:0;
+}
+
+h1{
+  margin-top:0;
+}
+
+input,select,textarea,button{
+  box-sizing:border-box;
+  width:100%;
+  padding:12px;
+  margin:5px 0;
+  border:1px solid #ccc;
+  border-radius:10px;
+  font-size:16px;
+}
+
+button{
+  cursor:pointer;
+  background:#c9ef91;
+  border:0;
+}
+
+.card{
+  background:white;
+  padding:16px;
+  margin:15px 0;
+  border-radius:16px;
+}
+
+.row{
+  background:white;
+  padding:15px;
+  margin:10px 0;
+  border-radius:15px;
+}
+
+.actions{
+  display:flex;
+  gap:8px;
+}
+
+.actions button{
+  flex:1;
+}
+
+#message{
+  margin:15px 0;
+  font-weight:bold;
+}
 </style>
 </head>
+
 <body>
 
 <h1>KATENAILS — записи</h1>
 
-<input id="key" type="password" placeholder="Ключ">
-<button onclick="loadBookings()">Войти</button>
+<div class="card">
+  <input id="key" type="password" placeholder="Ключ администратора">
+  <button onclick="login()">Войти</button>
+</div>
 
-<div id="error"></div>
-<div id="list"></div>
+<div id="message"></div>
+
+<div id="admin" style="display:none">
+
+  <div class="card">
+    <h2>➕ Добавить запись вручную</h2>
+
+    <select id="manualService">
+      <option>Маникюр</option>
+      <option>Стрижки</option>
+    </select>
+
+    <input id="manualDate" type="date">
+
+    <select id="manualTime">
+      <option value="">Выберите время</option>
+    </select>
+
+    <input id="manualName" placeholder="Имя клиента">
+
+    <input id="manualPhone" placeholder="Телефон" type="tel">
+
+    <input id="manualInstagram" placeholder="@username">
+
+    <textarea id="manualComment" placeholder="Комментарий"></textarea>
+
+    <button onclick="addBooking()">Добавить запись</button>
+  </div>
+
+  <h2>📋 Все записи</h2>
+
+  <div id="list"></div>
+
+</div>
 
 <script>
-async function loadBookings(){
-  const error=document.getElementById("error");
-  const list=document.getElementById("list");
-  const key=document.getElementById("key").value;
 
-  error.textContent="Загрузка...";
-  list.innerHTML="";
+let adminKey = "";
+
+const slots = [
+  "09:00","10:00","11:00","12:00",
+  "13:00","14:00","15:00","16:00",
+  "17:00","18:00","19:00"
+];
+
+async function login(){
+
+  adminKey = document.getElementById("key").value;
+
+  if(!adminKey){
+    message("Введите ключ");
+    return;
+  }
+
+  await loadBookings();
+}
+
+async function loadBookings(){
 
   try{
-    const r=await fetch("/api/bookings",{
-      headers:{"x-admin-key":key}
+
+    const r = await fetch("/api/bookings",{
+      headers:{
+        "x-admin-key":adminKey
+      }
     });
 
-    const text=await r.text();
-    let data;
-
-    try{
-      data=JSON.parse(text);
-    }catch{
-      throw new Error("Сервер вернул не JSON: "+text);
-    }
+    const data = await r.json();
 
     if(!r.ok){
-      throw new Error(data.error||"Ошибка "+r.status);
+      message(data.error || "Ошибка входа");
+      return;
     }
 
-    error.textContent="";
+    document.getElementById("admin").style.display="block";
+    document.getElementById("message").textContent="";
+
+    const list=document.getElementById("list");
 
     if(!data.length){
-      list.innerHTML="<h3>Записей пока нет</h3>";
+      list.innerHTML="<p>Записей пока нет.</p>";
       return;
     }
 
     list.innerHTML=data.map(x=>`
+
       <div class="row">
-        <b>${x.date} ${x.time}</b> — ${x.service}<br>
-        ${x.name} · ${x.phone}<br>
-        ${x.comment||""}<br>
-        Статус: <b>${x.status}</b><br>
-        <button onclick="act(${x.id},'confirmed')">Подтвердить</button>
-        <button onclick="act(${x.id},'cancelled')">Отменить</button>
+
+        <b>${x.date} ${x.time}</b><br>
+        Услуга: ${escapeHtml(x.service)}<br>
+        Клиент: ${escapeHtml(x.name)}<br>
+        Телефон: ${escapeHtml(x.phone)}<br>
+        Instagram: ${escapeHtml(x.instagram || "—")}<br>
+        Комментарий: ${escapeHtml(x.comment || "—")}<br>
+        Статус: <b>${statusText(x.status)}</b>
+
+        ${
+          x.status === "pending"
+          ? `
+            <div class="actions">
+              <button onclick="changeStatus(${x.id},'confirmed')">
+                ✅ Подтвердить
+              </button>
+
+              <button onclick="changeStatus(${x.id},'cancelled')">
+                ❌ Отменить
+              </button>
+            </div>
+          `
+          : ""
+        }
+
       </div>
+
     `).join("");
 
+    await updateManualTimes();
+
   }catch(e){
-    error.textContent="Ошибка: "+e.message;
+
+    message("Ошибка соединения с сервером");
+
   }
 }
 
-async function act(id,status){
-  const key=document.getElementById("key").value;
+async function changeStatus(id,status){
 
-  await fetch("/api/bookings/"+id,{
-    method:"PATCH",
-    headers:{
-      "Content-Type":"application/json",
-      "x-admin-key":key
-    },
-    body:JSON.stringify({status})
-  });
+  try{
 
-  loadBookings();
+    const r=await fetch("/api/bookings/"+id,{
+      method:"PATCH",
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-key":adminKey
+      },
+      body:JSON.stringify({status})
+    });
+
+    const data=await r.json();
+
+    if(!r.ok){
+      message(data.error || "Не удалось изменить статус");
+      return;
+    }
+
+    await loadBookings();
+
+  }catch(e){
+
+    message("Ошибка соединения");
+
+  }
 }
+
+async function addBooking(){
+
+  const service=document.getElementById("manualService").value;
+  const date=document.getElementById("manualDate").value;
+  const time=document.getElementById("manualTime").value;
+  const name=document.getElementById("manualName").value.trim();
+  const phone=document.getElementById("manualPhone").value.trim();
+  const instagram=document.getElementById("manualInstagram").value.trim();
+  const comment=document.getElementById("manualComment").value.trim();
+
+  if(!date || !time || !name || !phone || !instagram){
+    message("Заполните дату, время, имя, телефон и Instagram");
+    return;
+  }
+
+  try{
+
+    const r=await fetch("/api/admin/bookings",{
+      method:"POST",
+      headers:{
+        "Content-Type":"application/json",
+        "x-admin-key":adminKey
+      },
+      body:JSON.stringify({
+        service,
+        date,
+        time,
+        name,
+        phone,
+        instagram,
+        comment
+      })
+    });
+
+    const data=await r.json();
+
+    if(!r.ok){
+      message(data.error || "Не удалось добавить запись");
+      return;
+    }
+
+    message("Запись добавлена ✅");
+
+    document.getElementById("manualName").value="";
+    document.getElementById("manualPhone").value="";
+    document.getElementById("manualInstagram").value="";
+    document.getElementById("manualComment").value="";
+
+    await loadBookings();
+
+  }catch(e){
+
+    message("Ошибка соединения");
+
+  }
+}
+
+async function updateManualTimes(){
+
+  const date=document.getElementById("manualDate").value;
+  const service=document.getElementById("manualService").value;
+  const select=document.getElementById("manualTime");
+
+  if(!date) return;
+
+  try{
+
+    const r=await fetch(
+      `/api/availability?service=${encodeURIComponent(service)}&date=${date}`
+    );
+
+    const data=await r.json();
+
+    select.innerHTML='<option value="">Выберите время</option>';
+
+    data.slots
+      .filter(x=>x.available)
+      .forEach(x=>{
+        const option=document.createElement("option");
+        option.value=x.time;
+        option.textContent=x.time;
+        select.appendChild(option);
+      });
+
+  }catch(e){
+
+    select.innerHTML='<option value="">Ошибка загрузки</option>';
+
+  }
+}
+
+function statusText(status){
+
+  if(status==="pending") return "⏳ Ожидает подтверждения";
+  if(status==="confirmed") return "✅ Подтверждена";
+  if(status==="cancelled") return "❌ Отменена";
+
+  return status;
+}
+
+function message(text){
+
+  document.getElementById("message").textContent=text;
+
+}
+
+function escapeHtml(value){
+
+  return String(value)
+    .replaceAll("&","&amp;")
+    .replaceAll("<","&lt;")
+    .replaceAll(">","&gt;")
+    .replaceAll('"',"&quot;")
+    .replaceAll("'","&#039;");
+
+}
+
+document.getElementById("manualDate").value =
+  new Date().toISOString().slice(0,10);
+
+document.getElementById("manualDate").onchange =
+  updateManualTimes;
+
+document.getElementById("manualService").onchange =
+  updateManualTimes;
+
 </script>
 
 </body>
