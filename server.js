@@ -1,7 +1,7 @@
 require("dotenv").config();
 const express=require("express"),Database=require("better-sqlite3"),nodemailer=require("nodemailer"),webpush=require("web-push"),path=require("path");
 const app=express(),db=new Database("katenails.db");
-app.use(express.json());app.use(express.static("public"));
+app.use(express.json());app.use(express..static(".");
 db.exec(`CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY AUTOINCREMENT,service TEXT,name TEXT,phone TEXT,date TEXT,time TEXT,comment TEXT,status TEXT DEFAULT 'pending',subscription TEXT,created_at TEXT DEFAULT CURRENT_TIMESTAMP);
 CREATE UNIQUE INDEX IF NOT EXISTS slot ON bookings(service,date,time) WHERE status!='cancelled'`);
 const slots=["09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00"];
@@ -14,5 +14,5 @@ app.get("/api/availability",(q,s)=>{if(!services.includes(q.query.service)||!q.q
 app.post("/api/bookings",async(q,s)=>{const b=q.body||{};if(!services.includes(b.service)||!b.name||!b.phone||!b.date||!slots.includes(b.time))return s.status(400).json({error:"Заполните обязательные поля"});try{const r=db.prepare("INSERT INTO bookings(service,name,phone,date,time,comment,subscription) VALUES(?,?,?,?,?,?,?)").run(b.service,b.name.trim(),b.phone.trim(),b.date,b.time,(b.comment||"").trim(),b.subscription?JSON.stringify(b.subscription):null);await email(`Новая запись KATENAILS\n\nУслуга: ${b.service}\nКлиент: ${b.name}\nТелефон: ${b.phone}\nДата: ${b.date}\nВремя: ${b.time}\nКомментарий: ${b.comment||"—"}\nID: ${r.lastInsertRowid}`);s.json({ok:true,status:"pending"})}catch(e){s.status(String(e.message).includes("UNIQUE")?409:500).json({error:String(e.message).includes("UNIQUE")?"Время уже занято":"Ошибка сервера"})}});
 app.get("/api/bookings",admin,(q,s)=>s.json(db.prepare("SELECT * FROM bookings ORDER BY date,time,id DESC").all()));
 app.patch("/api/bookings/:id",admin,async(q,s)=>{const b=db.prepare("SELECT * FROM bookings WHERE id=?").get(+q.params.id);if(!b)return s.status(404).json({error:"Не найдена"});if(!["confirmed","cancelled"].includes(q.body.status))return s.status(400).json({error:"Неверный статус"});db.prepare("UPDATE bookings SET status=? WHERE id=?").run(q.body.status,b.id);if(b.subscription&&process.env.VAPID_PUBLIC_KEY&&process.env.VAPID_PRIVATE_KEY)try{await webpush.sendNotification(JSON.parse(b.subscription),JSON.stringify({title:q.body.status==="confirmed"?"KATENAILS — запись подтверждена":"KATENAILS — запись отменена",body:`${b.service}: ${b.date} в ${b.time}`}))}catch(e){}s.json({ok:true})});
-app.get("*",(q,s)=>s.sendFile(path.join(__dirname,"public/index.html")));
+app.get("*",(q,s)=>s.sendFile(path.join(__dirname,"index.html")));
 app.listen(+process.env.PORT||3000);
